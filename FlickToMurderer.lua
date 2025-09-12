@@ -13,7 +13,7 @@ local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
--- Valores por defecto inicializados aquí para evitar el error de :setState()
+-- Valores por defecto inicializados aquí para evitar el error de :SetState()
 local flickEnabled = false
 local isFlicking = false
 
