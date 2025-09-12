@@ -13,6 +13,7 @@ local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
+-- Valores por defecto inicializados aquí para evitar el error de :setState()
 local flickEnabled = false
 local isFlicking = false
 
@@ -336,12 +337,12 @@ end)
 flick_section:AddToggle("Auto-Disable ShiftLock", function(state)
     forceDisableShiftLock = state
     showNotification("configChanges", state and "✅ Will disable ShiftLock" or "⚠️ Flick may fail with ShiftLock", 3)
-end):setState(true) -- Esta línea funcionará si el plugin soporta el encadenamiento
+end)
 
 flick_section:AddToggle("Show Tracers", function(state)
     showTracers = state
     showNotification("configChanges", state and "✅ Tracers ON" or "❌ Tracers OFF", 2)
-end):setState(false)
+end)
 
 flick_section:AddDropdown("Rotation Method", rotationMethods, function(selected)
     rotationMethod = selected
@@ -385,13 +386,13 @@ input_section:AddDropdown("Mouse Button", mouseButtons, function(selected)
 end)
 
 local notification_section = shared.AddSection("🔔 Notification Settings")
-notification_section:AddToggle("Flick Success", function(s) notificationSettings.flickSuccess = s end):setState(true)
-notification_section:AddToggle("Target Not Found", function(s) notificationSettings.targetNotFound = s end):setState(true)
-notification_section:AddToggle("Target Too Far", function(s) notificationSettings.targetTooFar = s end):setState(true)
-notification_section:AddToggle("Gun Not Found", function(s) notificationSettings.gunNotFound = s end):setState(true)
-notification_section:AddToggle("Enable/Disable Flick", function(s) notificationSettings.flickEnabled = s; notificationSettings.flickDisabled = s end):setState(true)
-notification_section:AddToggle("Mobile Restore Msg", function(s) notificationSettings.mobileRestore = s end):setState(true)
-notification_section:AddToggle("Config Changes", function(s) notificationSettings.configChanges = s end):setState(false)
+notification_section:AddToggle("Flick Success", function(s) notificationSettings.flickSuccess = s end)
+notification_section:AddToggle("Target Not Found", function(s) notificationSettings.targetNotFound = s end)
+notification_section:AddToggle("Target Too Far", function(s) notificationSettings.targetTooFar = s end)
+notification_section:AddToggle("Gun Not Found", function(s) notificationSettings.gunNotFound = s end)
+notification_section:AddToggle("Enable/Disable Flick", function(s) notificationSettings.flickEnabled = s; notificationSettings.flickDisabled = s end)
+notification_section:AddToggle("Mobile Restore Msg", function(s) notificationSettings.mobileRestore = s end)
+notification_section:AddToggle("Config Changes", function(s) notificationSettings.configChanges = s end)
 
 local function handleInput(input, gameProcessed)
     if gameProcessed or isFlicking or not flickEnabled then return end
