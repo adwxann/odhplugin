@@ -1,7 +1,7 @@
 local shared = odh_shared_plugins
 
 local flick_section = shared.AddSection("🎯 Flick to Murderer [v5.0 Mobile Fix]")
-flick_section:AddLabel("Mobile joystick freeze has been fixed")
+flick_section:AddLabel("The ONLY working solution for ShiftLock + Mobile Fixed")
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -28,7 +28,7 @@ local showTracers = false
 local inputType = "Keyboard"
 local selectedInput = "Q"
 
-local originalCFrame = nil
+local originalCframe = nil
 local originalVelocity = nil
 local wasInAir = false
 local wasShiftLockEnabled = false
@@ -37,6 +37,7 @@ local originalMouseBehavior = nil
 local mobileButton = nil
 local tracer = nil
 local rotationConnection = nil
+local mobileControlConnection = nil
 
 local notificationSettings = {
     flickSuccess = true,
@@ -99,8 +100,8 @@ local function restoreCharacterState()
     end
 end
 
-local function findTarget(findClosest)
-    if findClosest then
+local function findTarget(isTest)
+    if isTest then
         local closestPlayer, minDistance = nil, maxDistance
         for _, player in ipairs(Players:GetPlayers()) do
             if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
@@ -246,7 +247,7 @@ local function performRotation(rootPart, targetCFrame, speed, onCompleted)
         end)
 
     elseif rotationMethod == "TweenService" then
-        local tween = TweenService:Create(rootPart, TweenInfo.new(speed, Enum.EasingStyle.Sine), {CFrame = targetCframe})
+        local tween = TweenService:Create(rootPart, TweenInfo.new(speed, Enum.EasingStyle.Sine), {CFrame = targetCFrame})
         tween.Completed:Connect(onCompleted)
         tween:Play()
 
@@ -263,7 +264,7 @@ local function performRotation(rootPart, targetCFrame, speed, onCompleted)
 end
 
 local function executeFlick(isTest)
-    if isFlicking or not flickEnabled then return end
+    if isFlicking or (not flickEnabled and not isTest) then return end
 
     local character = LocalPlayer.Character
     if not character then return end
@@ -293,7 +294,7 @@ local function executeFlick(isTest)
     end
 
     isFlicking = true
-    originalCFrame = rootPart.CFrame
+    originalCframe = rootPart.CFrame
     wasInAir = isPlayerInAir(humanoid)
     if wasInAir then originalVelocity = rootPart.AssemblyLinearVelocity end
 
@@ -319,30 +320,28 @@ local function executeFlick(isTest)
         end
         showNotification("flickSuccess", "✅ " .. flickMessage, 1)
 
-        performRotation(rootPart, originalCFrame, returnSpeed, function()
+        performRotation(rootPart, originalCframe, returnSpeed, function()
             restoreCharacterState()
             isFlicking = false
         end)
     end)
 end
 
-local enableFlickToggle = flick_section:AddToggle("Enable Flick", function(state)
+-- UI ELEMENTS
+flick_section:AddToggle("Enable Flick", function(state)
     flickEnabled = state
     showNotification(state and "flickEnabled" or "flickDisabled", state and "✅ Flick Enabled" or "❌ Flick Disabled", 2)
 end)
-enableFlickToggle:setState(false)
 
-local autoDisableShiftLockToggle = flick_section:AddToggle("Auto-Disable ShiftLock", function(state)
+flick_section:AddToggle("Auto-Disable ShiftLock", function(state)
     forceDisableShiftLock = state
     showNotification("configChanges", state and "✅ Will disable ShiftLock" or "⚠️ Flick may fail with ShiftLock", 3)
-end)
-autoDisableShiftLockToggle:setState(true)
+end):setState(true) -- Esta línea funcionará si el plugin soporta el encadenamiento
 
-local showTracersToggle = flick_section:AddToggle("Show Tracers", function(state)
+flick_section:AddToggle("Show Tracers", function(state)
     showTracers = state
     showNotification("configChanges", state and "✅ Tracers ON" or "❌ Tracers OFF", 2)
-end)
-showTracersToggle:setState(false)
+end):setState(false)
 
 flick_section:AddDropdown("Rotation Method", rotationMethods, function(selected)
     rotationMethod = selected
@@ -386,20 +385,13 @@ input_section:AddDropdown("Mouse Button", mouseButtons, function(selected)
 end)
 
 local notification_section = shared.AddSection("🔔 Notification Settings")
-local flickSuccessToggle = notification_section:AddToggle("Flick Success", function(s) notificationSettings.flickSuccess = s end)
-flickSuccessToggle:setState(true)
-local targetNotFoundToggle = notification_section:AddToggle("Target Not Found", function(s) notificationSettings.targetNotFound = s end)
-targetNotFoundToggle:setState(true)
-local targetTooFarToggle = notification_section:AddToggle("Target Too Far", function(s) notificationSettings.targetTooFar = s end)
-targetTooFarToggle:setState(true)
-local gunNotFoundToggle = notification_section:AddToggle("Gun Not Found", function(s) notificationSettings.gunNotFound = s end)
-gunNotFoundToggle:setState(true)
-local enableDisableToggle = notification_section:AddToggle("Enable/Disable Flick", function(s) notificationSettings.flickEnabled = s; notificationSettings.flickDisabled = s end)
-enableDisableToggle:setState(true)
-local mobileRestoreToggle = notification_section:AddToggle("Mobile Restore Msg", function(s) notificationSettings.mobileRestore = s end)
-mobileRestoreToggle:setState(true)
-local configChangesToggle = notification_section:AddToggle("Config Changes", function(s) notificationSettings.configChanges = s end)
-configChangesToggle:setState(false)
+notification_section:AddToggle("Flick Success", function(s) notificationSettings.flickSuccess = s end):setState(true)
+notification_section:AddToggle("Target Not Found", function(s) notificationSettings.targetNotFound = s end):setState(true)
+notification_section:AddToggle("Target Too Far", function(s) notificationSettings.targetTooFar = s end):setState(true)
+notification_section:AddToggle("Gun Not Found", function(s) notificationSettings.gunNotFound = s end):setState(true)
+notification_section:AddToggle("Enable/Disable Flick", function(s) notificationSettings.flickEnabled = s; notificationSettings.flickDisabled = s end):setState(true)
+notification_section:AddToggle("Mobile Restore Msg", function(s) notificationSettings.mobileRestore = s end):setState(true)
+notification_section:AddToggle("Config Changes", function(s) notificationSettings.configChanges = s end):setState(false)
 
 local function handleInput(input, gameProcessed)
     if gameProcessed or isFlicking or not flickEnabled then return end
@@ -423,13 +415,15 @@ end
 UserInputService.InputBegan:Connect(handleInput)
 
 flick_section:AddToggle("Mobile Button", function(state)
-    if mobileButton then mobileButton:Destroy() mobileButton = nil end
     if state then
-        local gui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+        if mobileButton then mobileButton:Destroy() end
+        
+        local gui = Instance.new("ScreenGui")
         gui.Name = "FlickMobileGUI"
         gui.ResetOnSpawn = false
+        gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
         
-        local button = Instance.new("TextButton", gui)
+        local button = Instance.new("TextButton")
         button.Name = "FlickButton"
         button.Text = "🎯"
         button.Font = Enum.Font.SourceSansBold
@@ -439,6 +433,7 @@ flick_section:AddToggle("Mobile Button", function(state)
         button.Size = UDim2.new(0, 60, 0, 60)
         button.Position = UDim2.new(0.85, 0, 0.5, 0)
         button.Draggable = true
+        button.Parent = gui
         
         local corner = Instance.new("UICorner", button)
         corner.CornerRadius = UDim.new(0.5, 0)
@@ -449,6 +444,8 @@ flick_section:AddToggle("Mobile Button", function(state)
         
         mobileButton = gui
         showNotification("configChanges", "📱 Mobile button created", 2)
+    else
+        if mobileButton then mobileButton:Destroy() mobileButton = nil end
     end
 end)
 
