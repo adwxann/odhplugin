@@ -246,7 +246,7 @@ local function performRotation(rootPart, targetCFrame, speed, onCompleted)
         end)
 
     elseif rotationMethod == "TweenService" then
-        local tween = TweenService:Create(rootPart, TweenInfo.new(speed, Enum.EasingStyle.Sine), {CFrame = targetCFrame})
+        local tween = TweenService:Create(rootPart, TweenInfo.new(speed, Enum.EasingStyle.Sine), {CFrame = targetCframe})
         tween.Completed:Connect(onCompleted)
         tween:Play()
 
@@ -458,4 +458,3 @@ return function()
     if rotationConnection then rotationConnection:Disconnect() end
     restoreCharacterState()
 end
-
