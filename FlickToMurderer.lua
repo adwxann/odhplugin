@@ -326,20 +326,23 @@ local function executeFlick(isTest)
     end)
 end
 
-flick_section:AddToggle("Enable Flick", function(state)
+local enableFlickToggle = flick_section:AddToggle("Enable Flick", function(state)
     flickEnabled = state
     showNotification(state and "flickEnabled" or "flickDisabled", state and "✅ Flick Enabled" or "❌ Flick Disabled", 2)
-end):SetState(false)
+end)
+enableFlickToggle:setState(false)
 
-flick_section:AddToggle("Auto-Disable ShiftLock", function(state)
+local autoDisableShiftLockToggle = flick_section:AddToggle("Auto-Disable ShiftLock", function(state)
     forceDisableShiftLock = state
     showNotification("configChanges", state and "✅ Will disable ShiftLock" or "⚠️ Flick may fail with ShiftLock", 3)
-end):SetState(true)
+end)
+autoDisableShiftLockToggle:setState(true)
 
-flick_section:AddToggle("Show Tracers", function(state)
+local showTracersToggle = flick_section:AddToggle("Show Tracers", function(state)
     showTracers = state
     showNotification("configChanges", state and "✅ Tracers ON" or "❌ Tracers OFF", 2)
-end):SetState(false)
+end)
+showTracersToggle:setState(false)
 
 flick_section:AddDropdown("Rotation Method", rotationMethods, function(selected)
     rotationMethod = selected
@@ -383,13 +386,20 @@ input_section:AddDropdown("Mouse Button", mouseButtons, function(selected)
 end)
 
 local notification_section = shared.AddSection("🔔 Notification Settings")
-notification_section:AddToggle("Flick Success", function(s) notificationSettings.flickSuccess = s end):SetState(true)
-notification_section:AddToggle("Target Not Found", function(s) notificationSettings.targetNotFound = s end):SetState(true)
-notification_section:AddToggle("Target Too Far", function(s) notificationSettings.targetTooFar = s end):SetState(true)
-notification_section:AddToggle("Gun Not Found", function(s) notificationSettings.gunNotFound = s end):SetState(true)
-notification_section:AddToggle("Enable/Disable Flick", function(s) notificationSettings.flickEnabled = s; notificationSettings.flickDisabled = s end):SetState(true)
-notification_section:AddToggle("Mobile Restore Msg", function(s) notificationSettings.mobileRestore = s end):SetState(true)
-notification_section:AddToggle("Config Changes", function(s) notificationSettings.configChanges = s end):SetState(false)
+local flickSuccessToggle = notification_section:AddToggle("Flick Success", function(s) notificationSettings.flickSuccess = s end)
+flickSuccessToggle:setState(true)
+local targetNotFoundToggle = notification_section:AddToggle("Target Not Found", function(s) notificationSettings.targetNotFound = s end)
+targetNotFoundToggle:setState(true)
+local targetTooFarToggle = notification_section:AddToggle("Target Too Far", function(s) notificationSettings.targetTooFar = s end)
+targetTooFarToggle:setState(true)
+local gunNotFoundToggle = notification_section:AddToggle("Gun Not Found", function(s) notificationSettings.gunNotFound = s end)
+gunNotFoundToggle:setState(true)
+local enableDisableToggle = notification_section:AddToggle("Enable/Disable Flick", function(s) notificationSettings.flickEnabled = s; notificationSettings.flickDisabled = s end)
+enableDisableToggle:setState(true)
+local mobileRestoreToggle = notification_section:AddToggle("Mobile Restore Msg", function(s) notificationSettings.mobileRestore = s end)
+mobileRestoreToggle:setState(true)
+local configChangesToggle = notification_section:AddToggle("Config Changes", function(s) notificationSettings.configChanges = s end)
+configChangesToggle:setState(false)
 
 local function handleInput(input, gameProcessed)
     if gameProcessed or isFlicking or not flickEnabled then return end
@@ -448,3 +458,4 @@ return function()
     if rotationConnection then rotationConnection:Disconnect() end
     restoreCharacterState()
 end
+
