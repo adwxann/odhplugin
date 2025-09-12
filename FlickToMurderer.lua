@@ -1,41 +1,53 @@
 local shared = odh_shared_plugins
 
-local flick_section = shared.AddSection("🎯 Flick to Murderer [v4.3 Mobile Fix]")
-
-flick_section:AddLabel("The ONLY working solution for ShiftLock + Mobile Fixed")
+local flick_section = shared.AddSection("🎯 Flick to Murderer [v5.0 Mobile Fix]")
+flick_section:AddLabel("Mobile joystick freeze has been fixed")
 
 local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local TweenService = game:GetService("TweenService")
+
+local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
 local flickEnabled = false
+local isFlicking = false
+
 local flickSpeed = 0.15
 local returnSpeed = 0.2
 local shootDelay = 0.05
 local shiftLockDisableDuration = 0.1
-local selectedInput = "Q"
-local inputType = "Keyboard"
-local showTracers = false
 local maxDistance = 150
-local smoothReturn = true
-local antiDetection = true
-local forceDisableShiftLock = true
 local rotationMethod = "Velocity-Based"
+local forceDisableShiftLock = true
+local showTracers = false
 
-local isFlicking = false
+local inputType = "Keyboard"
+local selectedInput = "Q"
+
 local originalCFrame = nil
-local mobileButton = nil
-local tracer = nil
-local wasShiftLockEnabled = false
-local originalMouseBehavior = nil
 local originalVelocity = nil
 local wasInAir = false
+local wasShiftLockEnabled = false
+local originalMouseBehavior = nil
+
+local mobileButton = nil
+local tracer = nil
 local rotationConnection = nil
+
+local notificationSettings = {
+    flickSuccess = true,
+    flickEnabled = true,
+    flickDisabled = true,
+    targetNotFound = true,
+    targetTooFar = true,
+    gunNotFound = true,
+    mobileRestore = true,
+    configChanges = true
+}
 
 local keyboardKeys = {
     "Q", "E", "R", "T", "Y", "F", "G", "H", "Z", "X", "C", "V", "B",
@@ -44,535 +56,298 @@ local keyboardKeys = {
     "F1", "F2", "F3", "F4", "F5", "F6",
     "Insert", "Delete", "Home", "End", "PageUp", "PageDown"
 }
-
 local mouseButtons = {
     "Left Click", "Right Click", "Middle Click", "Mouse4", "Mouse5"
 }
-
 local rotationMethods = {
-    "Velocity-Based",
-    "CFrame-Instant", 
-    "TweenService",
-    "BodyVelocity"
+    "Velocity-Based", "CFrame-Instant", "TweenService", "BodyVelocity"
 }
 
-local function isShiftLockActive()
-    return UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter
+local function showNotification(type, message, duration)
+    if notificationSettings[type] then
+        shared.Notify(message, duration)
+    end
 end
 
-local function disableShiftLock()
-    if isShiftLockActive() then
-        wasShiftLockEnabled = true
-        originalMouseBehavior = UserInputService.MouseBehavior
-        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-        
-        local character = LocalPlayer.Character
-        if character then
-            local humanoid = character:FindFirstChild("Humanoid")
-            if humanoid then
-                humanoid.AutoRotate = false
+local function restoreCharacterState()
+    local character = LocalPlayer.Character
+    if not character then return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+
+    if wasShiftLockEnabled and originalMouseBehavior then
+        task.wait(shiftLockDisableDuration)
+        UserInputService.MouseBehavior = originalMouseBehavior
+        wasShiftLockEnabled = false
+        originalMouseBehavior = nil
+    end
+
+    if humanoid then
+        humanoid.AutoRotate = true
+        if UserInputService.TouchEnabled then
+            pcall(function()
+                humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+            end)
+            task.wait()
+            if rootPart then
+                rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0.01)
+                task.wait()
+                rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            end
+            showNotification("mobileRestore", "📱 Mobile controls restored", 1)
+        end
+    end
+end
+
+local function findTarget(findClosest)
+    if findClosest then
+        local closestPlayer, minDistance = nil, maxDistance
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                local distance = (LocalPlayer.Character.HumanoidRootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude
+                if distance < minDistance then
+                    minDistance = distance
+                    closestPlayer = player
+                end
             end
         end
-        
-        return true
+        return closestPlayer
+    else
+        if game.PlaceId == 142823291 then
+            local success, roleData = pcall(function()
+                return ReplicatedStorage.GetPlayerData:InvokeServer()
+            end)
+            if success and roleData then
+                for name, data in pairs(roleData) do
+                    if data.Role == "Murderer" and not data.Killed and not data.Dead then
+                        local player = Players:FindFirstChild(name)
+                        if player and player.Character then return player end
+                    end
+                end
+            end
+        end
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Humanoid") and player.Character.Humanoid.Health > 0 then
+                for _, item in ipairs(player.Character:GetChildren()) do
+                    if item:IsA("Tool") and item.Name:lower():match("knife|sword|blade|scythe|killer|murderer") then
+                        return player
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function hasGunEquipped()
+    local character = LocalPlayer.Character
+    if not character then return false end
+
+    for _, tool in ipairs(character:GetChildren()) do
+        if tool:IsA("Tool") and tool.Name:lower():match("gun|pistol|revolver|shooter") then
+            return true
+        end
     end
     return false
 end
 
-local function restoreShiftLock()
-    if wasShiftLockEnabled and originalMouseBehavior then
-        task.wait(shiftLockDisableDuration)
-        UserInputService.MouseBehavior = originalMouseBehavior
-        
-        local character = LocalPlayer.Character
-        if character then
-            local humanoid = character:FindFirstChild("Humanoid")
-            if humanoid then
-                humanoid.AutoRotate = true
-            end
-        end
-        
-        wasShiftLockEnabled = false
-        originalMouseBehavior = nil
-    end
-end
-
-
-local function restoreMobileControls()
-    local character = LocalPlayer.Character
-    if not character then return end
-    
-    local humanoid = character:FindFirstChild("Humanoid")
-    if humanoid then
-        
-        humanoid.AutoRotate = true
-        
-        
-        pcall(function()
-            humanoid:ChangeState(Enum.HumanoidStateType.Running)
-        end)
-        
-        
-        if UserInputService.TouchEnabled then
-            
-            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-            
-            
-            task.wait(0.1)
-            
-            
-            local rootPart = character:FindFirstChild("HumanoidRootPart")
-            if rootPart then
-                
-                rootPart.AssemblyLinearVelocity = rootPart.CFrame.LookVector * 0.01
-                task.wait()
-                rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-            end
-        end
-    end
-end
-
-local function findMurdererMM2()
-    local success, roleData = pcall(function()
-        local remote = ReplicatedStorage:FindFirstChild("GetPlayerData", true)
-        if remote and remote:IsA("RemoteFunction") then
-            return remote:InvokeServer()
-        end
-    end)
-    
-    if success and roleData then
-        for playerName, data in pairs(roleData) do
-            if data.Role == "Murderer" and not data.Killed and not data.Dead then
-                local player = Players:FindFirstChild(playerName)
-                if player and player.Character then
-                    return player
-                end
-            end
-        end
-    end
-    
-    return nil
-end
-
-local function findMurdererGeneric()
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character then
-            local humanoid = player.Character:FindFirstChild("Humanoid")
-            if humanoid and humanoid.Health > 0 then
-                for _, item in ipairs(player.Character:GetChildren()) do
-                    if item:IsA("Tool") then
-                        local toolName = item.Name:lower()
-                        if toolName:find("knife") or toolName:find("sword") or 
-                           toolName:find("blade") or toolName:find("scythe") or 
-                           toolName:find("killer") or toolName:find("murderer") then
-                            return player
-                        end
-                    end
-                end
-                
-                local backpack = player:FindFirstChild("Backpack")
-                if backpack then
-                    for _, item in ipairs(backpack:GetChildren()) do
-                        if item:IsA("Tool") then
-                            local toolName = item.Name:lower()
-                            if toolName:find("knife") or toolName:find("sword") or 
-                               toolName:find("blade") or toolName:find("scythe") or 
-                               toolName:find("killer") or toolName:find("murderer") then
-                                return player
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return nil
-end
-
-local function findMurderer()
-    if game.PlaceId == 142823291 then
-        local murderer = findMurdererMM2()
-        if murderer then return murderer end
-    end
-    return findMurdererGeneric()
-end
-
 local function equipGun()
+    if hasGunEquipped() then return true end
+
     local character = LocalPlayer.Character
-    if not character then return false end
-    
-    local humanoid = character:FindFirstChild("Humanoid")
-    if not humanoid then return false end
-    
-    for _, tool in ipairs(character:GetChildren()) do
-        if tool:IsA("Tool") then
-            local toolName = tool.Name:lower()
-            if toolName:find("gun") or toolName:find("pistol") or 
-               toolName:find("revolver") or toolName:find("shooter") then
-                return true
-            end
-        end
-    end
-    
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     local backpack = LocalPlayer:FindFirstChild("Backpack")
-    if backpack then
-        for _, tool in ipairs(backpack:GetChildren()) do
-            if tool:IsA("Tool") then
-                local toolName = tool.Name:lower()
-                if toolName:find("gun") or toolName:find("pistol") or 
-                   toolName:find("revolver") or toolName:find("shooter") then
-                    humanoid:EquipTool(tool)
-                    task.wait(0.1)
-                    return true
-                end
-            end
+    if not humanoid or not backpack then return false end
+
+    for _, tool in ipairs(backpack:GetChildren()) do
+        if tool:IsA("Tool") and tool.Name:lower():match("gun|pistol|revolver|shooter") then
+            humanoid:EquipTool(tool)
+            task.wait(0.1)
+            return true
         end
     end
-    
     return false
 end
 
 local function updateTracer(targetPosition)
-    if not showTracers then
+    if tracer then
+        tracer:Destroy()
+        tracer = nil
+    end
+    if not showTracers then return end
+
+    local rootPart = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return end
+
+    tracer = Instance.new("Part")
+    tracer.Name = "FlickTracer"
+    tracer.Anchored = true
+    tracer.CanCollide = false
+    tracer.Material = Enum.Material.Neon
+    tracer.Color = Color3.fromRGB(255, 0, 0)
+    tracer.Transparency = 0.5
+    tracer.Parent = workspace
+
+    local startPos = rootPart.Position
+    local distance = (targetPosition - startPos).Magnitude
+    tracer.Size = Vector3.new(0.2, 0.2, distance)
+    tracer.CFrame = CFrame.lookAt(startPos, targetPosition) * CFrame.new(0, 0, -distance / 2)
+
+    task.spawn(function()
+        TweenService:Create(tracer, TweenInfo.new(0.5), {Transparency = 1}):Play()
+        task.wait(0.5)
         if tracer then
             tracer:Destroy()
             tracer = nil
-        end
-        return
-    end
-    
-    if not tracer then
-        tracer = Instance.new("Part")
-        tracer.Name = "FlickTracer"
-        tracer.Anchored = true
-        tracer.CanCollide = false
-        tracer.Material = Enum.Material.Neon
-        tracer.BrickColor = BrickColor.new("Really red")
-        tracer.Transparency = 0.5
-        tracer.Parent = workspace
-    end
-    
-    local character = LocalPlayer.Character
-    if character and character:FindFirstChild("HumanoidRootPart") then
-        local startPos = character.HumanoidRootPart.Position
-        local distance = (targetPosition - startPos).Magnitude
-        
-        tracer.Size = Vector3.new(0.2, 0.2, distance)
-        tracer.CFrame = CFrame.lookAt(startPos, targetPosition) * CFrame.new(0, 0, -distance/2)
-        
-        task.spawn(function()
-            for i = 0.5, 1, 0.1 do
-                tracer.Transparency = i
-                task.wait(0.05)
-            end
-            if tracer then
-                tracer:Destroy()
-                tracer = nil
-            end
-        end)
-    end
-end
-
-local function simulateClick()
-    local success = false
-    
-    if not success then
-        success = pcall(function()
-            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-            task.wait()
-            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
-        end)
-    end
-    
-    if not success then
-        success = pcall(function()
-            local mouse = LocalPlayer:GetMouse()
-            if mouse.Click then
-                mouse:Click()
-            end
-        end)
-    end
-    
-    pcall(function()
-        local character = LocalPlayer.Character
-        if character then
-            for _, tool in pairs(character:GetChildren()) do
-                if tool:IsA("Tool") then
-                    tool:Activate()
-                    break
-                end
-            end
         end
     end)
 end
 
-local function isPlayerInAir(humanoid, rootPart)
-    if humanoid:GetState() == Enum.HumanoidStateType.Freefall or 
-       humanoid:GetState() == Enum.HumanoidStateType.Flying or
-       humanoid:GetState() == Enum.HumanoidStateType.Jumping then
-        return true
-    end
-    
-    local raycast = workspace:Raycast(rootPart.Position, Vector3.new(0, -5, 0))
-    return raycast == nil
+local function simulateClick()
+    pcall(function()
+        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+        task.wait()
+        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+    end)
+    pcall(function()
+        for _, tool in ipairs(LocalPlayer.Character:GetChildren()) do
+            if tool:IsA("Tool") then tool:Activate() break end
+        end
+    end)
 end
 
+local function isPlayerInAir(humanoid)
+    local state = humanoid:GetState()
+    return state == Enum.HumanoidStateType.Freefall or state == Enum.HumanoidStateType.Jumping
+end
 
-local function performRotation(humanoidRootPart, targetCFrame, callback)
-    
-    local isMobile = UserInputService.TouchEnabled
-    
+local function performRotation(rootPart, targetCFrame, speed, onCompleted)
+    local startCFrame = rootPart.CFrame
+
     if rotationMethod == "CFrame-Instant" then
-        humanoidRootPart.CFrame = targetCFrame
-        if wasInAir and originalVelocity then
-            humanoidRootPart.AssemblyLinearVelocity = originalVelocity
-        end
-        task.wait(flickSpeed)
-        callback()
-        
-        if isMobile then restoreMobileControls() end
-        
+        rootPart.CFrame = targetCFrame
+        if wasInAir and originalVelocity then rootPart.AssemblyLinearVelocity = originalVelocity end
+        task.wait(speed)
+        onCompleted()
+
     elseif rotationMethod == "Velocity-Based" then
         local startTime = tick()
-        local startCFrame = humanoidRootPart.CFrame
-        local savedVelocity = humanoidRootPart.AssemblyLinearVelocity
-        
+        local savedVelocity = wasInAir and originalVelocity or rootPart.AssemblyLinearVelocity
         rotationConnection = RunService.Heartbeat:Connect(function()
-            local elapsed = tick() - startTime
-            local progress = math.min(elapsed / flickSpeed, 1)
-            
-            local currentRotation = startCFrame:Lerp(targetCFrame, progress)
-            humanoidRootPart.CFrame = CFrame.new(humanoidRootPart.Position) * currentRotation.Rotation
-            humanoidRootPart.AssemblyLinearVelocity = savedVelocity
-            
+            local progress = math.min((tick() - startTime) / speed, 1)
+            local currentRotation = startCFrame:Lerp(targetCFrame, progress).Rotation
+            rootPart.CFrame = CFrame.new(rootPart.Position) * currentRotation
+            rootPart.AssemblyLinearVelocity = savedVelocity
             if progress >= 1 then
-                if rotationConnection then
-                    rotationConnection:Disconnect()
-                    rotationConnection = nil
-                end
-                callback()
-                
-                if isMobile then restoreMobileControls() end
+                rotationConnection:Disconnect()
+                rotationConnection = nil
+                onCompleted()
             end
         end)
-        
+
     elseif rotationMethod == "TweenService" then
-        if wasInAir then
-            humanoidRootPart.CFrame = targetCFrame
-            humanoidRootPart.AssemblyLinearVelocity = originalVelocity
-            task.wait(flickSpeed)
-            callback()
-            if isMobile then restoreMobileControls() end
-        else
-            local tweenInfo = TweenInfo.new(
-                flickSpeed,
-                Enum.EasingStyle.Sine,
-                Enum.EasingDirection.InOut
-            )
-            
-            local tween = TweenService:Create(
-                humanoidRootPart,
-                tweenInfo,
-                {CFrame = targetCFrame}
-            )
-            
-            tween:Play()
-            tween.Completed:Connect(function()
-                callback()
-                if isMobile then restoreMobileControls() end
-            end)
-        end
-        
+        local tween = TweenService:Create(rootPart, TweenInfo.new(speed, Enum.EasingStyle.Sine), {CFrame = targetCFrame})
+        tween.Completed:Connect(onCompleted)
+        tween:Play()
+
     elseif rotationMethod == "BodyVelocity" then
-        local bodyVelocity = Instance.new("BodyVelocity")
-        bodyVelocity.MaxForce = Vector3.new(0, math.huge, 0)
-        bodyVelocity.Velocity = originalVelocity or Vector3.new(0, 0, 0)
-        bodyVelocity.Parent = humanoidRootPart
-        
-        humanoidRootPart.CFrame = targetCFrame
-        
-        task.wait(flickSpeed)
-        bodyVelocity:Destroy()
-        callback()
-        if isMobile then restoreMobileControls() end
+        local bodyVel = Instance.new("BodyVelocity")
+        bodyVel.MaxForce = Vector3.new(0, math.huge, 0)
+        bodyVel.Velocity = originalVelocity or Vector3.new()
+        bodyVel.Parent = rootPart
+        rootPart.CFrame = targetCFrame
+        task.wait(speed)
+        bodyVel:Destroy()
+        onCompleted()
     end
 end
 
+local function executeFlick(isTest)
+    if isFlicking or not flickEnabled then return end
 
-local function performFlick()
-    if isFlicking then return end
-    if not flickEnabled then return end
-    
     local character = LocalPlayer.Character
-    if not character then
-        shared.Notify("❌ Character not found!", 2)
+    if not character then return end
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not rootPart or not humanoid then return end
+
+    if not isTest and not equipGun() then
+        showNotification("gunNotFound", "❌ Gun not found!", 2)
         return
     end
-    
-    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-    local humanoid = character:FindFirstChild("Humanoid")
-    if not humanoidRootPart or not humanoid then return end
-    
-    local murderer = findMurderer()
-    if not murderer or not murderer.Character then
-        shared.Notify("⚠️ Murderer not found!", 2)
+
+    local targetPlayer = findTarget(isTest)
+    if not targetPlayer or not targetPlayer.Character then
+        local message = isTest and "⚠️ No nearby players found!" or "⚠️ Murderer not found!"
+        showNotification("targetNotFound", message, 2)
         return
     end
-    
-    local murdererRoot = murderer.Character:FindFirstChild("HumanoidRootPart")
-    if not murdererRoot then return end
-    
-    local distance = (murdererRoot.Position - humanoidRootPart.Position).Magnitude
+
+    local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not targetRoot then return end
+
+    local distance = (targetRoot.Position - rootPart.Position).Magnitude
     if distance > maxDistance then
-        shared.Notify("⚠️ Target too far: " .. math.floor(distance) .. " studs", 2)
+        showNotification("targetTooFar", "⚠️ Target too far: " .. math.floor(distance) .. " studs", 2)
         return
     end
-    
-    if not equipGun() then
-        shared.Notify("❌ Gun not found!", 2)
-        return
-    end
-    
+
     isFlicking = true
-    
-    originalCFrame = humanoidRootPart.CFrame
-    
-    wasInAir = isPlayerInAir(humanoid, humanoidRootPart)
-    if wasInAir then
-        originalVelocity = humanoidRootPart.AssemblyLinearVelocity
+    originalCFrame = rootPart.CFrame
+    wasInAir = isPlayerInAir(humanoid)
+    if wasInAir then originalVelocity = rootPart.AssemblyLinearVelocity end
+
+    if forceDisableShiftLock and UserInputService.MouseBehavior == Enum.MouseBehavior.LockCenter then
+        wasShiftLockEnabled = true
+        originalMouseBehavior = UserInputService.MouseBehavior
+        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+        task.wait(0.05)
     end
+
+    updateTracer(targetRoot.Position)
+
+    local direction = (targetRoot.Position - rootPart.Position) * Vector3.new(1, 0, 1)
+    local targetRotation = CFrame.lookAt(rootPart.Position, rootPart.Position + direction.Unit)
+    local targetCFrame = CFrame.new(rootPart.Position) * targetRotation.Rotation
     
-    local shiftLockWasDisabled = false
-    if forceDisableShiftLock and isShiftLockActive() then
-        shiftLockWasDisabled = disableShiftLock()
-        if shiftLockWasDisabled then
-            task.wait(0.05)
-        end
-    end
-    
-    updateTracer(murdererRoot.Position)
-    
-    local myPosition = humanoidRootPart.Position
-    local targetPosition = murdererRoot.Position
-    local direction = (targetPosition - myPosition) * Vector3.new(1, 0, 1)
-    
-    if direction.Magnitude > 0 then
-        direction = direction.Unit
-        local targetCFrame = CFrame.lookAt(myPosition, myPosition + direction)
-        
-        if wasInAir then
-            targetCFrame = CFrame.new(humanoidRootPart.Position) * targetCFrame.Rotation
-        else
-            targetCFrame = CFrame.new(originalCFrame.Position) * targetCFrame.Rotation
-        end
-        
-        performRotation(humanoidRootPart, targetCFrame, function()
+    local flickMessage = (isTest and "Test flick on " or "Flicked: ") .. targetPlayer.Name .. " (" .. math.floor(distance) .. " studs)"
+
+    performRotation(rootPart, targetCFrame, flickSpeed, function()
+        if not isTest then
             task.wait(shootDelay)
             simulateClick()
-            
-            if originalCFrame then
-                performRotation(humanoidRootPart, originalCFrame, function()
-                    if shiftLockWasDisabled then
-                        restoreShiftLock()
-                    end
-                    
-                    if not wasInAir then
-                        humanoidRootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                        humanoidRootPart.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
-                    end
-                    
-                    isFlicking = false
-                    
-                    
-                    if UserInputService.TouchEnabled then
-                        task.wait(0.1)
-                        restoreMobileControls()
-                        shared.Notify("📱 Mobile controls restored", 1)
-                    end
-                end)
-            else
-                if shiftLockWasDisabled then
-                    restoreShiftLock()
-                end
-                isFlicking = false
-                
-                
-                if UserInputService.TouchEnabled then
-                    task.wait(0.1)
-                    restoreMobileControls()
-                end
-            end
+        end
+        showNotification("flickSuccess", "✅ " .. flickMessage, 1)
+
+        performRotation(rootPart, originalCFrame, returnSpeed, function()
+            restoreCharacterState()
+            isFlicking = false
         end)
-    end
-    
-    shared.Notify("✅ Flicked: " .. murderer.Name .. " (" .. math.floor(distance) .. " studs)", 1)
+    end)
 end
 
 flick_section:AddToggle("Enable Flick", function(state)
     flickEnabled = state
-    if state then
-        shared.Notify("✅ Flick Enabled", 2)
-    else
-        shared.Notify("❌ Flick Disabled", 2)
-        if tracer then
-            tracer:Destroy()
-            tracer = nil
-        end
-        if rotationConnection then
-            rotationConnection:Disconnect()
-            rotationConnection = nil
-        end
-    end
-end)
+    showNotification(state and "flickEnabled" or "flickDisabled", state and "✅ Flick Enabled" or "❌ Flick Disabled", 2)
+end):SetState(false)
 
-flick_section:AddToggle("Auto-Disable ShiftLock (Required)", function(state)
+flick_section:AddToggle("Auto-Disable ShiftLock", function(state)
     forceDisableShiftLock = state
-    if state then
-        shared.Notify("✅ Will temporarily disable ShiftLock during flick", 3)
-    else
-        shared.Notify("⚠️ Flick won't work with ShiftLock active!", 3)
-    end
-end)
+    showNotification("configChanges", state and "✅ Will disable ShiftLock" or "⚠️ Flick may fail with ShiftLock", 3)
+end):SetState(true)
+
+flick_section:AddToggle("Show Tracers", function(state)
+    showTracers = state
+    showNotification("configChanges", state and "✅ Tracers ON" or "❌ Tracers OFF", 2)
+end):SetState(false)
 
 flick_section:AddDropdown("Rotation Method", rotationMethods, function(selected)
     rotationMethod = selected
-    shared.Notify("🔄 Method: " .. selected, 2)
-    
-    if selected == "Velocity-Based" then
-        shared.Notify("Best for air physics preservation", 3)
-    elseif selected == "CFrame-Instant" then
-        shared.Notify("Instant rotation, maintains velocity", 3)
-    elseif selected == "TweenService" then
-        shared.Notify("Smooth but may cause floating", 3)
-    elseif selected == "BodyVelocity" then
-        shared.Notify("Uses physics to maintain momentum", 3)
-    end
-end)
-
-flick_section:AddSlider("ShiftLock Disable Duration (ms)", 50, 500, 100, function(value)
-    shiftLockDisableDuration = value / 1000
-    shared.Notify("⏱️ ShiftLock restore delay: " .. value .. "ms", 1)
-end)
-
-flick_section:AddDropdown("Input Type", {"Keyboard", "Mouse"}, function(selected)
-    inputType = selected
-    shared.Notify("📌 Input type: " .. selected, 2)
-end)
-
-flick_section:AddDropdown("Keyboard Key", keyboardKeys, function(selected)
-    selectedInput = selected
-    shared.Notify("⌨️ Key set to: " .. selected, 2)
-end)
-
-flick_section:AddDropdown("Mouse Button", mouseButtons, function(selected)
-    selectedInput = selected
-    shared.Notify("🖱️ Mouse button: " .. selected, 2)
+    showNotification("configChanges", "🔄 Method: " .. selected, 2)
 end)
 
 flick_section:AddSlider("Flick Speed (ms)", 0, 500, 150, function(value)
     flickSpeed = value / 1000
-    local speedType = value < 50 and "Instant" or value < 150 and "Fast" or value < 300 and "Natural" or "Slow"
-    shared.Notify("⚡ Speed: " .. speedType, 1)
 end)
 
 flick_section:AddSlider("Return Speed (ms)", 0, 500, 200, function(value)
@@ -587,175 +362,89 @@ flick_section:AddSlider("Max Distance", 50, 500, 150, function(value)
     maxDistance = value
 end)
 
-flick_section:AddLabel("⚙️ Advanced Features")
-
-flick_section:AddToggle("Smooth Movement", function(state)
-    smoothReturn = state
-    shared.Notify(state and "✅ Smooth movement ON" or "❌ Smooth movement OFF", 2)
+flick_section:AddButton("Test Flick", function()
+    executeFlick(true)
 end)
 
-flick_section:AddToggle("Anti-Detection (Human-like)", function(state)
-    antiDetection = state
-    shared.Notify(state and "✅ Anti-detection ON" or "❌ Anti-detection OFF", 2)
+local input_section = shared.AddSection("⌨️ Input Settings")
+input_section:AddDropdown("Input Type", {"Keyboard", "Mouse"}, function(selected)
+    inputType = selected
+    showNotification("configChanges", "📌 Input type: " .. selected, 2)
 end)
 
-flick_section:AddToggle("Show Tracers", function(state)
-    showTracers = state
-    if not state and tracer then
-        tracer:Destroy()
-        tracer = nil
-    end
-    shared.Notify(state and "✅ Tracers ON" or "❌ Tracers OFF", 2)
+input_section:AddDropdown("Keyboard Key", keyboardKeys, function(selected)
+    selectedInput = selected
+    showNotification("configChanges", "⌨️ Key set to: " .. selected, 2)
 end)
 
-local function handleInput(input)
-    if not flickEnabled or isFlicking then return end
-    
+input_section:AddDropdown("Mouse Button", mouseButtons, function(selected)
+    selectedInput = selected
+    showNotification("configChanges", "🖱️ Mouse button: " .. selected, 2)
+end)
+
+local notification_section = shared.AddSection("🔔 Notification Settings")
+notification_section:AddToggle("Flick Success", function(s) notificationSettings.flickSuccess = s end):SetState(true)
+notification_section:AddToggle("Target Not Found", function(s) notificationSettings.targetNotFound = s end):SetState(true)
+notification_section:AddToggle("Target Too Far", function(s) notificationSettings.targetTooFar = s end):SetState(true)
+notification_section:AddToggle("Gun Not Found", function(s) notificationSettings.gunNotFound = s end):SetState(true)
+notification_section:AddToggle("Enable/Disable Flick", function(s) notificationSettings.flickEnabled = s; notificationSettings.flickDisabled = s end):SetState(true)
+notification_section:AddToggle("Mobile Restore Msg", function(s) notificationSettings.mobileRestore = s end):SetState(true)
+notification_section:AddToggle("Config Changes", function(s) notificationSettings.configChanges = s end):SetState(false)
+
+local function handleInput(input, gameProcessed)
+    if gameProcessed or isFlicking or not flickEnabled then return end
+
     if inputType == "Keyboard" then
-        local keyName = selectedInput
-        
-        local specialKeys = {
-            ["Tab"] = Enum.KeyCode.Tab,
-            ["CapsLock"] = Enum.KeyCode.CapsLock,
-            ["LeftShift"] = Enum.KeyCode.LeftShift,
-            ["LeftControl"] = Enum.KeyCode.LeftControl,
-            ["LeftAlt"] = Enum.KeyCode.LeftAlt,
-            ["One"] = Enum.KeyCode.One,
-            ["Two"] = Enum.KeyCode.Two,
-            ["Three"] = Enum.KeyCode.Three,
-            ["Four"] = Enum.KeyCode.Four,
-            ["Five"] = Enum.KeyCode.Five,
-            ["Insert"] = Enum.KeyCode.Insert,
-            ["Delete"] = Enum.KeyCode.Delete,
-            ["Home"] = Enum.KeyCode.Home,
-            ["End"] = Enum.KeyCode.End,
-            ["PageUp"] = Enum.KeyCode.PageUp,
-            ["PageDown"] = Enum.KeyCode.PageDown
-        }
-        
-        local targetKey
-        if specialKeys[keyName] then
-            targetKey = specialKeys[keyName]
-        elseif keyName:sub(1, 1) == "F" and tonumber(keyName:sub(2)) then
-            targetKey = Enum.KeyCode["F" .. keyName:sub(2)]
-        else
-            targetKey = Enum.KeyCode[keyName]
-        end
-        
-        if input.KeyCode == targetKey then
-            performFlick()
+        if input.KeyCode.Name == selectedInput then
+            executeFlick(false)
         end
     elseif inputType == "Mouse" then
         local mouseMap = {
-            ["Left Click"] = Enum.UserInputType.MouseButton1,
-            ["Right Click"] = Enum.UserInputType.MouseButton2,
-            ["Middle Click"] = Enum.UserInputType.MouseButton3,
-            ["Mouse4"] = Enum.UserInputType.MouseButton4,
+            ["Left Click"] = Enum.UserInputType.MouseButton1, ["Right Click"] = Enum.UserInputType.MouseButton2,
+            ["Middle Click"] = Enum.UserInputType.MouseButton3, ["Mouse4"] = Enum.UserInputType.MouseButton4,
             ["Mouse5"] = Enum.UserInputType.MouseButton5
         }
-        
         if input.UserInputType == mouseMap[selectedInput] then
-            performFlick()
+            executeFlick(false)
         end
     end
 end
 
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    handleInput(input)
-end)
-
+UserInputService.InputBegan:Connect(handleInput)
 
 flick_section:AddToggle("Mobile Button", function(state)
+    if mobileButton then mobileButton:Destroy() mobileButton = nil end
     if state then
-        if mobileButton then mobileButton:Destroy() end
-        
-        local gui = Instance.new("ScreenGui")
+        local gui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
         gui.Name = "FlickMobileGUI"
         gui.ResetOnSpawn = false
-        gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
         
-        local button = Instance.new("TextButton")
+        local button = Instance.new("TextButton", gui)
         button.Name = "FlickButton"
         button.Text = "🎯"
         button.Font = Enum.Font.SourceSansBold
         button.TextScaled = true
-        button.TextColor3 = Color3.fromRGB(255, 255, 255)
+        button.TextColor3 = Color3.new(1, 1, 1)
         button.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
-        button.BorderSizePixel = 3
-        button.BorderColor3 = Color3.fromRGB(0, 0, 0)
         button.Size = UDim2.new(0, 60, 0, 60)
         button.Position = UDim2.new(0.85, 0, 0.5, 0)
-        button.Active = true
         button.Draggable = true
-        button.Parent = gui
         
-        local corner = Instance.new("UICorner")
+        local corner = Instance.new("UICorner", button)
         corner.CornerRadius = UDim.new(0.5, 0)
-        corner.Parent = button
         
-        button.MouseButton1Down:Connect(function()
-            button.BackgroundColor3 = Color3.fromRGB(180, 30, 30)
-            button.Size = UDim2.new(0, 55, 0, 55)
-        end)
-        
-        
-        button.MouseButton1Up:Connect(function()
-            button.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
-            button.Size = UDim2.new(0, 60, 0, 60)
-            
-            
-            local character = LocalPlayer.Character
-            if character then
-                local humanoid = character:FindFirstChild("Humanoid")
-                if humanoid then
-                    
-                    performFlick()
-                    
-                    task.spawn(function()
-                        task.wait(1) 
-                        humanoid.AutoRotate = true
-                        restoreMobileControls()
-                        shared.Notify("📱 Mobile controls fully restored", 1)
-                    end)
-                end
-            else
-                performFlick()
-            end
+        button.MouseButton1Click:Connect(function()
+            executeFlick(false)
         end)
         
         mobileButton = gui
-        shared.Notify("📱 Mobile button created with fix", 2)
-    else
-        if mobileButton then
-            mobileButton:Destroy()
-            mobileButton = nil
-        end
+        showNotification("configChanges", "📱 Mobile button created", 2)
     end
 end)
-
-flick_section:AddLabel("")
-flick_section:AddLabel("⚠️ IMPORTANT:")
-flick_section:AddLabel("• ShiftLock is temporarily disabled during flick")
-flick_section:AddLabel("• Mobile controls now auto-restore after flick")
-
-shared.Notify("✅ Flick v4.3 Mobile Fix Loaded!", 3)
-shared.Notify("Mobile joystick bug has been fixed!", 4)
-print("=====================================")
-print("Flick-to-Murderer Plugin v4.3 MOBILE FIX")
-print("Mobile controls restoration implemented")
-print("Joystick should work after flick now")
-print("=====================================")
 
 return function()
     if mobileButton then mobileButton:Destroy() end
     if tracer then tracer:Destroy() end
-    if rotationConnection then
-        rotationConnection:Disconnect()
-        rotationConnection = nil
-    end
-    if wasShiftLockEnabled then
-        restoreShiftLock()
-    end
-    restoreMobileControls()
+    if rotationConnection then rotationConnection:Disconnect() end
+    restoreCharacterState()
 end
