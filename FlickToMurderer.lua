@@ -1,8 +1,8 @@
 local shared = odh_shared_plugins
 
-local flick_section = shared.AddSection("🎯 Flick to Murderer [v4.3]")
+local flick_section = shared.AddSection("🎯 Flick to Murderer [v4.3 Mobile Fix]")
 
-flick_section:AddLabel("The ONLY working solution for ShiftLock")
+flick_section:AddLabel("The ONLY working solution for ShiftLock + Mobile Fixed")
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -94,6 +94,41 @@ local function restoreShiftLock()
         
         wasShiftLockEnabled = false
         originalMouseBehavior = nil
+    end
+end
+
+
+local function restoreMobileControls()
+    local character = LocalPlayer.Character
+    if not character then return end
+    
+    local humanoid = character:FindFirstChild("Humanoid")
+    if humanoid then
+        
+        humanoid.AutoRotate = true
+        
+        
+        pcall(function()
+            humanoid:ChangeState(Enum.HumanoidStateType.Running)
+        end)
+        
+        
+        if UserInputService.TouchEnabled then
+            
+            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+            
+            
+            task.wait(0.1)
+            
+            
+            local rootPart = character:FindFirstChild("HumanoidRootPart")
+            if rootPart then
+                
+                rootPart.AssemblyLinearVelocity = rootPart.CFrame.LookVector * 0.01
+                task.wait()
+                rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            end
+        end
     end
 end
 
@@ -282,7 +317,11 @@ local function isPlayerInAir(humanoid, rootPart)
     return raycast == nil
 end
 
+
 local function performRotation(humanoidRootPart, targetCFrame, callback)
+    
+    local isMobile = UserInputService.TouchEnabled
+    
     if rotationMethod == "CFrame-Instant" then
         humanoidRootPart.CFrame = targetCFrame
         if wasInAir and originalVelocity then
@@ -290,6 +329,8 @@ local function performRotation(humanoidRootPart, targetCFrame, callback)
         end
         task.wait(flickSpeed)
         callback()
+        
+        if isMobile then restoreMobileControls() end
         
     elseif rotationMethod == "Velocity-Based" then
         local startTime = tick()
@@ -310,6 +351,8 @@ local function performRotation(humanoidRootPart, targetCFrame, callback)
                     rotationConnection = nil
                 end
                 callback()
+                
+                if isMobile then restoreMobileControls() end
             end
         end)
         
@@ -319,6 +362,7 @@ local function performRotation(humanoidRootPart, targetCFrame, callback)
             humanoidRootPart.AssemblyLinearVelocity = originalVelocity
             task.wait(flickSpeed)
             callback()
+            if isMobile then restoreMobileControls() end
         else
             local tweenInfo = TweenInfo.new(
                 flickSpeed,
@@ -333,7 +377,10 @@ local function performRotation(humanoidRootPart, targetCFrame, callback)
             )
             
             tween:Play()
-            tween.Completed:Connect(callback)
+            tween.Completed:Connect(function()
+                callback()
+                if isMobile then restoreMobileControls() end
+            end)
         end
         
     elseif rotationMethod == "BodyVelocity" then
@@ -347,8 +394,10 @@ local function performRotation(humanoidRootPart, targetCFrame, callback)
         task.wait(flickSpeed)
         bodyVelocity:Destroy()
         callback()
+        if isMobile then restoreMobileControls() end
     end
 end
+
 
 local function performFlick()
     if isFlicking then return end
@@ -433,12 +482,25 @@ local function performFlick()
                     end
                     
                     isFlicking = false
+                    
+                    
+                    if UserInputService.TouchEnabled then
+                        task.wait(0.1)
+                        restoreMobileControls()
+                        shared.Notify("📱 Mobile controls restored", 1)
+                    end
                 end)
             else
                 if shiftLockWasDisabled then
                     restoreShiftLock()
                 end
                 isFlicking = false
+                
+                
+                if UserInputService.TouchEnabled then
+                    task.wait(0.1)
+                    restoreMobileControls()
+                end
             end
         end)
     end
@@ -603,6 +665,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     handleInput(input)
 end)
 
+
 flick_section:AddToggle("Mobile Button", function(state)
     if state then
         if mobileButton then mobileButton:Destroy() end
@@ -636,13 +699,33 @@ flick_section:AddToggle("Mobile Button", function(state)
             button.Size = UDim2.new(0, 55, 0, 55)
         end)
         
+        
         button.MouseButton1Up:Connect(function()
             button.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
             button.Size = UDim2.new(0, 60, 0, 60)
-            performFlick()
+            
+            
+            local character = LocalPlayer.Character
+            if character then
+                local humanoid = character:FindFirstChild("Humanoid")
+                if humanoid then
+                    
+                    performFlick()
+                    
+                    task.spawn(function()
+                        task.wait(1) 
+                        humanoid.AutoRotate = true
+                        restoreMobileControls()
+                        shared.Notify("📱 Mobile controls fully restored", 1)
+                    end)
+                end
+            else
+                performFlick()
+            end
         end)
         
         mobileButton = gui
+        shared.Notify("📱 Mobile button created with fix", 2)
     else
         if mobileButton then
             mobileButton:Destroy()
@@ -654,13 +737,14 @@ end)
 flick_section:AddLabel("")
 flick_section:AddLabel("⚠️ IMPORTANT:")
 flick_section:AddLabel("• ShiftLock is temporarily disabled during flick")
+flick_section:AddLabel("• Mobile controls now auto-restore after flick")
 
-shared.Notify("✅ Flick-to-Murderer v4.3 Loaded!", 3)
-shared.Notify("Try 'Velocity Based' method for best air physics", 4)
+shared.Notify("✅ Flick v4.3 Mobile Fix Loaded!", 3)
+shared.Notify("Mobile joystick bug has been fixed!", 4)
 print("=====================================")
-print("Flick-to-Murderer Plugin v4.3")
-print("Multiple rotation methods available")
-print("Air physics preservation fixed")
+print("Flick-to-Murderer Plugin v4.3 MOBILE FIX")
+print("Mobile controls restoration implemented")
+print("Joystick should work after flick now")
 print("=====================================")
 
 return function()
@@ -673,4 +757,5 @@ return function()
     if wasShiftLockEnabled then
         restoreShiftLock()
     end
+    restoreMobileControls()
 end
