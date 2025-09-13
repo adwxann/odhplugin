@@ -826,4 +826,21 @@ flick_section:AddLabel("• Mobile button simulates selected key/mouse")
 notify("✅ Flick-to-Murderer v4.4 Loaded!", 3)
 notify("Mobile button now simulates selected input", 4)
 print("=====================================")
-print("Flick-to-Murderer Plugin v
+print("Flick-to-Murderer Plugin v4.4")
+print("Mobile input simulation fixed")
+print("Test mode added for practice")
+print("Notification control added")
+print("Settings persistence added")
+print("=====================================")
+
+return function()
+    if mobileButton then mobileButton:Destroy() end
+    if tracer then tracer:Destroy() end
+    if rotationConnection then
+        rotationConnection:Disconnect()
+        rotationConnection = nil
+    end
+    if wasShiftLockEnabled then
+        restoreShiftLock()
+    end
+end
